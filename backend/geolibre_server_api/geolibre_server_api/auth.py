@@ -82,9 +82,10 @@ from geolibre_server_api.proxy_identity import proxy_identity
 # ---------------------------------------------------------------------------
 
 PROJECT_SCOPES = ("read:projects", "write:projects", "share:public")
+DATA_SCOPES = ("read:data", "write:data", "process:data")
 MANAGEMENT_SCOPE = "manage:sessions"
 RESERVED_SCOPES = ("admin:org",)
-KNOWN_SCOPES = (*PROJECT_SCOPES, MANAGEMENT_SCOPE)
+KNOWN_SCOPES = (*PROJECT_SCOPES, *DATA_SCOPES, MANAGEMENT_SCOPE)
 SCOPE_ORDER = KNOWN_SCOPES
 PAT_MAX_DAYS = 365
 
@@ -765,6 +766,46 @@ def required_principal(
     return principal
 
 
+
+def required_data_principal(
+    request: Request,
+    bearer_principal: AuthPrincipal | None = Depends(optional_principal),
+    session: Session = Depends(get_session),
+) -> AuthPrincipal:
+    """Resolve a bearer user or trusted proxy identity for data APIs."""
+    if bearer_principal is not None:
+        return bearer_principal
+    try:
+        identity = proxy_identity(request)
+    except ValueError as exc:
+        raise HTTPException(401, "invalid proxy identity", headers=bearer_challenge()) from exc
+    if identity is None:
+        raise HTTPException(401, "authentication required", headers=bearer_challenge())
+    from geolibre_server_api import oidc
+
+    try:
+        account = oidc.resolve_proxy_account(session, identity, get_clock(request)())
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(401, "proxy identity is not authorized") from exc
+    return AuthPrincipal(
+        account=account,
+        scopes=frozenset(DATA_SCOPES),
+        credential_id=f"proxy:{identity.user}",
+        session_id=None,
+        authenticated_at=get_clock(request)(),
+    )
+
+
+def require_data_scope(scope: str):
+    """Guard a data route for bearer tokens or a configured trusted proxy."""
+
+    def dependency(principal: AuthPrincipal = Depends(required_data_principal)) -> AuthPrincipal:
+        ensure_scope(principal, scope)
+        return principal
+
+    return dependency
+
 def ensure_scope(principal: AuthPrincipal, scope: str) -> None:
     """Raise ``InsufficientScopeError`` unless ``principal`` holds ``scope``."""
     if scope not in principal.scopes:
@@ -799,7 +840,7 @@ def validate_pat_scopes(scopes: list[str] | None) -> str:
         if not scopes or any(not isinstance(scope, str) or not scope for scope in scopes):
             raise HTTPException(400, "invalid_scope")
         for scope in scopes:
-            if scope not in PROJECT_SCOPES:
+            if scope not in (*PROJECT_SCOPES, *DATA_SCOPES):
                 raise HTTPException(400, "invalid_scope")
         selected = list(dict.fromkeys(scopes))
     return " ".join(selected)

@@ -2,6 +2,7 @@ import type { MapEngine } from "@geolibre/map";
 import { S3_BROWSER_PLUGIN_ID } from "@geolibre/plugins";
 import { useEffect, useRef, type RefObject } from "react";
 import { useDesktopSettingsStore } from "../useDesktopSettings";
+import { readDeploymentEnvValue } from "../../lib/deployment-env";
 import { createAppAPI, getPluginManager } from "../usePlugins";
 
 interface StartupPanelsOptions {
@@ -19,6 +20,11 @@ interface StartupPanelsOptions {
  * The S3 Browser is session-scoped, so the startup project's plugin restore
  * leaves it open whichever runs first. The read-only viewer never opens it.
  *
+ * A deployment can also open the panel for every visitor with
+ * GEOLIBRE_S3_BROWSER_STARTUP=1 (runtime env → deployment env), which is how a
+ * managed private-data deployment makes its S3 access the front door without
+ * touching each device's settings.
+ *
  * @param options - The map engine, the viewer flag, and the readiness signals.
  */
 export function useStartupPanels({
@@ -28,9 +34,14 @@ export function useStartupPanels({
   mapReadyGeneration,
 }: StartupPanelsOptions): void {
   const handled = useRef(false);
-  const openS3Browser = useDesktopSettingsStore(
+  const openS3BrowserSetting = useDesktopSettingsStore(
     (state) => state.desktopSettings.startup.openS3Browser,
   );
+  const deploymentOpensS3Browser =
+    ["1", "true"].includes(
+      (readDeploymentEnvValue("VITE_GEOLIBRE_S3_BROWSER_STARTUP") ?? "").trim().toLowerCase(),
+    ) === true;
+  const openS3Browser = openS3BrowserSetting || deploymentOpensS3Browser;
   useEffect(() => {
     if (handled.current || viewer || !externalPluginsReady || !mapReadyGeneration) return;
     if (!mapControllerRef.current) return;

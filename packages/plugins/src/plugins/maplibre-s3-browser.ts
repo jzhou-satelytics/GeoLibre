@@ -162,6 +162,17 @@ const CSS = {
     "color:hsl(var(--foreground));",
   location: "font-size:10px;color:hsl(var(--muted-foreground));word-break:break-all;",
   selectLabel: "display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;",
+  crumbs: "display:flex;flex-wrap:wrap;gap:2px;align-items:center;font-size:11px;min-width:0;",
+  crumb:
+    "padding:2px 6px;border-radius:4px;border:1px solid hsl(var(--border));" +
+    "background:hsl(var(--background));color:hsl(var(--foreground));" +
+    "cursor:pointer;font:inherit;font-size:11px;max-width:180px;" +
+    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
+  crumbCurrent:
+    "padding:2px 6px;border-radius:4px;background:hsl(var(--muted));" +
+    "color:hsl(var(--foreground));font-weight:600;font-size:11px;" +
+    "max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
+  crumbSeparator: "color:hsl(var(--muted-foreground));",
 } as const;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -313,6 +324,15 @@ function buildPanel(container: HTMLElement, app: GeoLibreAppAPI | null): () => v
   input.type = "text";
   input.placeholder = labels.locationPlaceholder;
   input.value = signer?.defaultLocation?.() || readLastLocation();
+  // Least-privilege deployments may refuse ListAllMyBuckets, so with no
+  // default or last location recorded, open at the first bucket a connection
+  // names explicitly — the panel starts inside the deployment's bucket.
+  if (!input.value) {
+    const namedBucket = connections
+      .flatMap((connection) => connection.buckets)
+      .find((bucket) => !bucket.includes("*"));
+    if (namedBucket) input.value = `s3://${namedBucket}/`;
+  }
   input.setAttribute("aria-label", labels.locationPlaceholder);
   const go = button(labels.go, CSS.primaryButton);
   locationRow.append(input, go);
@@ -328,6 +348,44 @@ function buildPanel(container: HTMLElement, app: GeoLibreAppAPI | null): () => v
   makeDefault.style.display = signer?.setDefaultLocation ? "" : "none";
   navRow.append(up, makeDefault);
   root.append(navRow);
+
+  // Where the user is: bucket plus each folder segment, clickable up to (and
+  // including) the root. Hidden while no location is open.
+  const crumbRow = el("div", CSS.crumbs);
+  crumbRow.style.display = "none";
+  root.append(crumbRow);
+
+  /** Rebuilds the breadcrumb row for the location being shown. */
+  function renderCrumbs(): void {
+    crumbRow.replaceChildren();
+    if (!current) {
+      crumbRow.style.display = "none";
+      return;
+    }
+    crumbRow.style.display = "";
+    const bucket = current.bucket;
+    const segments: Array<{ prefix: string; label: string }> = [{ prefix: "", label: bucket }];
+    let walked = "";
+    for (const segment of current.prefix.split("/")) {
+      if (!segment) continue;
+      walked += `${segment}/`;
+      segments.push({ prefix: walked, label: segment });
+    }
+    segments.forEach((segment, index) => {
+      if (index > 0) crumbRow.append(el("span", CSS.crumbSeparator, "›"));
+      const isLast = index === segments.length - 1;
+      if (isLast) {
+        crumbRow.append(el("span", CSS.crumbCurrent, segment.label));
+        return;
+      }
+      const crumb = button(segment.label, CSS.crumb);
+      crumb.title = `s3://${bucket}/${segment.prefix}`;
+      crumb.addEventListener("click", () => {
+        void open({ bucket, prefix: segment.prefix });
+      });
+      crumbRow.append(crumb);
+    });
+  }
   makeDefault.addEventListener("click", () => {
     if (!current) return;
     signer?.setDefaultLocation?.(formatS3BrowseLocation(current));
@@ -607,6 +665,7 @@ function buildPanel(container: HTMLElement, app: GeoLibreAppAPI | null): () => v
     const { signal } = controller;
     current = null;
     refreshDefaultButton();
+    renderCrumbs();
     more.style.display = "none";
     list.replaceChildren();
     addable.length = 0;
@@ -640,6 +699,7 @@ function buildPanel(container: HTMLElement, app: GeoLibreAppAPI | null): () => v
       writeLastLocation(input.value);
       describeAccess(location.bucket);
       refreshDefaultButton();
+      renderCrumbs();
     }
     more.style.display = "none";
     setStatus(labels.loading);
@@ -737,6 +797,11 @@ function createS3BrowserPlugin(): GeoLibrePlugin {
     activate: (app: GeoLibreAppAPI) => {
       appRef = app;
       mountedPanels.add(remount);
+      // A managed deployment's session connection (Entra single sign-on)
+      // appears and disappears outside the settings store, so a panel mounted
+      // before sign-in would otherwise keep its stale "no connections" view.
+      // The literal mirrors the dispatch in the app's entra-s3-auth module.
+      window.addEventListener("geolibre:s3-connections-changed", remount);
       unregisterPanel =
         app.registerRightPanel?.({
           id: S3_BROWSER_PLUGIN_ID,
@@ -756,6 +821,7 @@ function createS3BrowserPlugin(): GeoLibrePlugin {
     },
     deactivate: (app: GeoLibreAppAPI) => {
       app.closeRightPanel?.(S3_BROWSER_PLUGIN_ID);
+      window.removeEventListener("geolibre:s3-connections-changed", remount);
       unregisterPanel?.();
       unregisterPanel = null;
       mountedPanels.delete(remount);

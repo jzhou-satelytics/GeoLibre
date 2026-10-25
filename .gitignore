@@ -88,3 +88,10 @@ apps/geolibre-desktop/src-tauri/mas/embedded.provisionprofile
 
 # Local Android Gradle cache for the vendored Tauri geolocation plugin.
 apps/geolibre-desktop/src-tauri/vendor/tauri-plugin-geolocation/android/.gradle/
+
+# Disposable Terraform state and provider cache.
+infra/terraform/**/.terraform/
+infra/terraform/**/*.tfstate
+infra/terraform/**/*.tfstate.*
+
+infra/terraform/**/terraform.tfvars

@@ -99,6 +99,7 @@ nav:
       - Cesium Renderer: cesium-renderer.md
       - ArcGIS Renderer: arcgis-renderer.md
       - Self-Hosting: self-hosting.md
+      - Private S3 + Entra MVP: private-s3-mvp.md
       - Server API: server-api.md
       - Android: android.md
       - iOS: ios.md

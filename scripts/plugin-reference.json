@@ -114,6 +114,10 @@
     "description": "Browse any Amazon S3 or S3-compatible bucket, public or private, and add its files.",
     "docs": "web-services.md#s3-browser"
   },
+  "geolibre-catalog-browser": {
+    "description": "Search a managed deployment's private-data catalog and add catalog datasets to the map.",
+    "docs": "private-s3-mvp.md#catalog-first-geolibre-ui"
+  },
   "maplibre-gl-natural-earth": {
     "description": "The Natural Earth vector and raster themes.",
     "docs": "web-services.md#natural-earth"

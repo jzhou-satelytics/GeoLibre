@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager, suppress
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Callable, Literal
@@ -36,6 +37,8 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from geolibre_server_api.catalog import router as build_catalog_router
+from geolibre_server_api import catalog_models as _catalog_models  # noqa: F401
 from geolibre_server_api.auth import (
     AuthPrincipal,
     InsufficientScopeError,
@@ -49,7 +52,6 @@ from geolibre_server_api.auth import (
     now,
     optional_principal,
     password_hash,
-    password_matches,
     require_scope,
     token_digest,
 )
@@ -751,6 +753,7 @@ def create_app(
             # Drops pooled IdP connections; the pool reconnects on demand, so a
             # restarted app (tests re-enter the lifespan) keeps working.
             idp_transport.close()
+            app.state.catalog_job_executor.shutdown(wait=False, cancel_futures=True)
 
     object_storage = storage or make_storage()
     base_url = (public_url or os.getenv("GEOLIBRE_PUBLIC_URL", "http://localhost:8000")).rstrip("/")
@@ -766,6 +769,9 @@ def create_app(
     app.state.engine = engine
     app.state.storage = object_storage
     app.state.session_factory = sessions
+    app.state.catalog_job_executor = ThreadPoolExecutor(
+        max_workers=max(1, int(os.getenv("GEOLIBRE_CATALOG_JOB_WORKERS", "2")))
+    )
     app.state.clock = clock_fn
     app.state.oauth_config = oauth_config
     app.state.base_url = base_url
@@ -889,6 +895,7 @@ def create_app(
 
     # Identity routes must precede the username/slug catch-alls below.
     app.include_router(build_identity_router())
+    app.include_router(build_catalog_router())
     app.include_router(build_enterprise_admin_router())
     app.include_router(build_scim_router())
     if oauth_config is not None:

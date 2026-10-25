@@ -17,6 +17,8 @@ point it. So a private deployment is really two questions:
 
 This page answers both. The short version:
 
+For the AWS/ECS deployment plan covering Microsoft Entra authentication, catalog-first S3 access, GeoPackage revisions, and GeoTIFF processing jobs, see [Private S3 + Entra MVP](private-s3-mvp.md).
+
 !!! tip "Recommended setup"
     Host your data with **[GeoLens](https://getgeolens.com)**, a self-hosted
     spatial catalog (FastAPI + PostGIS) with accounts, per-dataset permissions,

@@ -1,8 +1,15 @@
 import { Button, Input, Label, Select } from "@geolibre/ui";
-import { Check, Cloud, ExternalLink, Loader2, LogIn, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Cloud, ExternalLink, Loader2, LogIn, LogOut, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { credentialStorageLocation } from "../../lib/credential-store";
+import {
+  entraS3Config,
+  entraS3SignIn,
+  entraS3SignOut,
+  getEntraS3Status,
+  type EntraS3Status,
+} from "../../lib/entra-s3-auth";
 import { isTauri } from "../../lib/is-tauri";
 import { openExternalLink } from "../../lib/open-external";
 import {
@@ -58,6 +65,26 @@ export function CloudStorageSection({
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [ssoCode, setSsoCode] = useState<{ id: string; uri: string; code: string } | null>(null);
+  const [entraStatus, setEntraStatus] = useState<EntraS3Status>(getEntraS3Status());
+  const [entraBusy, setEntraBusy] = useState(false);
+  const [entraError, setEntraError] = useState<string | null>(null);
+
+  const entraSignIn = async () => {
+    setEntraBusy(true);
+    setEntraError(null);
+    try {
+      setEntraStatus(await entraS3SignIn());
+    } catch (error) {
+      setEntraError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEntraBusy(false);
+    }
+  };
+
+  const entraSignOut = () => {
+    entraS3SignOut();
+    setEntraStatus(getEntraS3Status());
+  };
 
   const refreshProfiles = () => {
     if (!desktop) return;
@@ -146,6 +173,8 @@ export function CloudStorageSection({
           <p className="text-xs text-muted-foreground">{t("settings.cloudStorage.corsNote")}</p>
         ) : null}
       </div>
+
+      {entraS3Config() ? <EntraS3Card status={entraStatus} busy={entraBusy} error={entraError} onSignIn={entraSignIn} onSignOut={entraSignOut} /> : null}
 
       {connections.length === 0 ? (
         <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
@@ -499,6 +528,63 @@ export function CloudStorageSection({
         <p className="text-xs text-muted-foreground">
           {t("settings.cloudStorage.defaultLocationHelp")}
         </p>
+      </div>
+    </div>
+  );
+}
+
+interface EntraS3CardProps {
+  status: EntraS3Status;
+  busy: boolean;
+  error: string | null;
+  onSignIn: () => Promise<void>;
+  onSignOut: () => void;
+}
+
+/** The Settings → Cloud Storage card for the deployment's Entra S3 session. */
+function EntraS3Card({ status, busy, error, onSignIn, onSignOut }: EntraS3CardProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-md border p-3" data-testid="entra-s3-session">
+      <div className="flex items-start gap-2">
+        <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-sm font-medium">{t("settings.cloudStorage.entra.title")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("settings.cloudStorage.entra.description")}
+          </p>
+          {status.signedIn ? (
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-xs">
+                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                {t("settings.cloudStorage.entra.signedInAs", { account: status.account })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.cloudStorage.entra.expires", {
+                  time: new Date(status.expiresAt ?? 0).toLocaleTimeString(),
+                })}
+                {" · "}
+                {status.buckets.join(", ")}
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={onSignOut} disabled={busy}>
+                <LogOut className="me-1 h-4 w-4" />
+                {t("settings.cloudStorage.entra.signOut")}
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" variant="outline" size="sm" onClick={() => void onSignIn()} disabled={busy}>
+              {busy ? <Loader2 className="me-1 h-4 w-4 animate-spin" /> : <LogIn className="me-1 h-4 w-4" />}
+              {busy
+                ? t("settings.cloudStorage.entra.signingIn")
+                : t("settings.cloudStorage.entra.signIn")}
+            </Button>
+          )}
+          {error ? (
+            <p className="break-words text-xs text-destructive" role="alert">
+              {t("settings.cloudStorage.entra.failed", { message: error })}
+            </p>
+          ) : null}
+        </div>
       </div>
     </div>
   );

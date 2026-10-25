@@ -131,7 +131,9 @@ RUN apt-get update \
 # rio-cogeo (rasterio) publish linux/arm64 wheels, so Vector->GeoParquet,
 # CSV->GeoParquet and Raster->COG work on both architectures.
 COPY backend/geolibre_server /opt/geolibre_server
+COPY backend/geolibre_server_api /opt/geolibre_server_api
 RUN pip install --no-cache-dir /opt/geolibre_server \
+  && pip install --no-cache-dir /opt/geolibre_server_api "boto3>=1.35" "psycopg[binary]>=3.2" \
   && pip install --no-cache-dir "duckdb>=1.1.0" "rio-cogeo>=5.0.0"
 
 # freestiler (PMTiles) and whitebox-workflows publish no linux/arm64 wheels, so
@@ -182,6 +184,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
   && printf '# Basic Auth disabled (GEOLIBRE_AUTH_USER/GEOLIBRE_AUTH_PASSWORD not set).\n' > /etc/nginx/geolibre-auth.conf \
   && printf '# AI proxy disabled (GEOLIBRE_AI_URL not set).\n' > /etc/nginx/geolibre-ai-proxy.conf \
   && printf '# Sidecar guards generated at boot.\n' > /etc/nginx/geolibre-sidecar-guards.conf \
+  && printf '# Catalog API proxy identity generated at boot.\n' > /etc/nginx/geolibre-catalog-auth.conf \
   && printf '# Sidecar off switch generated at boot.\n' > /etc/nginx/geolibre-sidecar-off.conf
 COPY --from=build /app/apps/geolibre-desktop/dist /usr/share/nginx/html
 

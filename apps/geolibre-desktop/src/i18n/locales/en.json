@@ -2808,7 +2808,17 @@
       "remove": "Remove",
       "add": "Add connection",
       "defaultLocation": "Default S3 Browser location",
-      "defaultLocationHelp": "The bucket and folder the S3 Browser opens at, e.g. s3://my-bucket/data/. Leave blank to reopen the last location browsed."
+      "defaultLocationHelp": "The bucket and folder the S3 Browser opens at, e.g. s3://my-bucket/data/. Leave blank to reopen the last location browsed.",
+      "entra": {
+        "title": "Entra single sign-on",
+        "description": "Sign in with your company account to read this deployment's S3 buckets. Credentials are temporary and stay in this tab.",
+        "signIn": "Sign in with Entra",
+        "signingIn": "Signing in…",
+        "signOut": "Sign out",
+        "signedInAs": "Signed in as {{account}}",
+        "expires": "Credentials expire {{time}}",
+        "failed": "Sign-in failed: {{message}}"
+      }
     },
     "menu": {
       "mapPreferences": "Map Preferences",
@@ -4187,6 +4197,7 @@
       "geolibre-planet-open-data": "Planet Open Data",
       "maplibre-gl-source-coop": "Source Cooperative",
       "geolibre-s3-browser": "S3 Browser",
+      "geolibre-catalog-browser": "Data Catalog",
       "maplibre-gl-natural-earth": "Natural Earth",
       "maplibre-gl-swipe": "Layer Swipe",
       "geolibre-elevation-profile": "Elevation Profile",

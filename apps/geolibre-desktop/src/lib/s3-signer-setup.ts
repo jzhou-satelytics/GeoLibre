@@ -5,9 +5,16 @@
 import { useDesktopSettingsStore } from "../hooks/useDesktopSettings";
 import { normalizeS3DefaultLocation } from "./s3-connections";
 import { installS3Signer } from "./s3-signer";
+import { entraS3SilentRestore, getSessionS3Connections } from "./entra-s3-auth";
 
+// The Entra session connection (in-memory, rotated by the auth module) rides
+// ahead of the user's own connections: its bucket patterns are set by the
+// deployment, and session rotation invalidates the signer's caches directly.
 installS3Signer(
-  () => useDesktopSettingsStore.getState().desktopSettings.s3Connections,
+  () => [
+    ...getSessionS3Connections(),
+    ...useDesktopSettingsStore.getState().desktopSettings.s3Connections,
+  ],
   (listener) =>
     useDesktopSettingsStore.subscribe((state, previous) => {
       if (state.desktopSettings.s3Connections !== previous.desktopSettings.s3Connections) {
@@ -27,3 +34,7 @@ installS3Signer(
     },
   },
 );
+
+// A tab that signed in earlier restores its Entra S3 session silently, so the
+// S3 Browser works again after a reload without re-prompting.
+void entraS3SilentRestore();

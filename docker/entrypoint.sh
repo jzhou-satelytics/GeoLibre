@@ -278,6 +278,68 @@ if auth0_domain or auth0_client_id:
     deployment["VITE_GEOLIBRE_AUTH0_DOMAIN"] = auth0_host
     deployment["VITE_GEOLIBRE_AUTH0_CLIENT_ID"] = auth0_client_id
 
+# Optional Entra-federated S3 access for the browser build. The four values are
+# public by design: the tenant and client IDs name the app registration whose
+# ID token the browser exchanges with AWS STS, and the role ARN names the role
+# that trust policy gates on the token audience. No secret belongs here. The
+# five variables are required together so a half configuration stops the boot
+# instead of leaving an S3 browser that cannot resolve credentials.
+entra_tenant = os.environ.get("GEOLIBRE_ENTRA_TENANT_ID", "").strip()
+entra_client = os.environ.get("GEOLIBRE_ENTRA_CLIENT_ID", "").strip()
+entra_role = os.environ.get("GEOLIBRE_ENTRA_ROLE_ARN", "").strip()
+entra_buckets = os.environ.get("GEOLIBRE_ENTRA_S3_BUCKETS", "").strip()
+entra_region = os.environ.get("GEOLIBRE_ENTRA_REGION", "").strip()
+if any((entra_tenant, entra_client, entra_role, entra_buckets)):
+    missing = [
+        name
+        for name, value in (
+            ("GEOLIBRE_ENTRA_TENANT_ID", entra_tenant),
+            ("GEOLIBRE_ENTRA_CLIENT_ID", entra_client),
+            ("GEOLIBRE_ENTRA_ROLE_ARN", entra_role),
+            ("GEOLIBRE_ENTRA_S3_BUCKETS", entra_buckets),
+        )
+        if not value
+    ]
+    if missing:
+        raise SystemExit(
+            "ERROR: Entra S3 access needs all of GEOLIBRE_ENTRA_TENANT_ID, "
+            "GEOLIBRE_ENTRA_CLIENT_ID, GEOLIBRE_ENTRA_ROLE_ARN, and "
+            "GEOLIBRE_ENTRA_S3_BUCKETS; missing: " + ", ".join(missing) + "."
+        )
+    guid_pattern = re.compile(
+        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    )
+    if not guid_pattern.match(entra_tenant):
+        raise SystemExit("ERROR: GEOLIBRE_ENTRA_TENANT_ID must be the directory (tenant) GUID.")
+    if not guid_pattern.match(entra_client):
+        raise SystemExit(
+            "ERROR: GEOLIBRE_ENTRA_CLIENT_ID must be the app registration Application (client) ID."
+        )
+    if not re.match(r"^arn:aws[a-z-]*:iam::\d{12}:role/.+$", entra_role):
+        raise SystemExit(
+            "ERROR: GEOLIBRE_ENTRA_ROLE_ARN must be a role ARN the Entra tokens can assume."
+        )
+    bucket_names = [name.strip() for name in entra_buckets.split(",") if name.strip()]
+    if not bucket_names or not all(
+        re.match(r"^[A-Za-z0-9][A-Za-z0-9.-]{1,254}$", name) for name in bucket_names
+    ):
+        raise SystemExit(
+            "ERROR: GEOLIBRE_ENTRA_S3_BUCKETS must be comma-separated bucket names."
+        )
+    deployment["VITE_GEOLIBRE_ENTRA_TENANT_ID"] = entra_tenant
+    deployment["VITE_GEOLIBRE_ENTRA_CLIENT_ID"] = entra_client
+    deployment["VITE_GEOLIBRE_ENTRA_ROLE_ARN"] = entra_role
+    deployment["VITE_GEOLIBRE_ENTRA_S3_BUCKETS"] = ",".join(bucket_names)
+    deployment["VITE_GEOLIBRE_ENTRA_REGION"] = entra_region or "us-east-1"
+
+# Open the S3 Browser panel at startup for every visitor (managed private-data
+# deployments). Off by default; only 1/true publishes the flag.
+s3_browser_startup = os.environ.get("GEOLIBRE_S3_BROWSER_STARTUP", "").strip().lower()
+if s3_browser_startup in ("1", "true"):
+    deployment["VITE_GEOLIBRE_S3_BROWSER_STARTUP"] = "1"
+elif s3_browser_startup not in ("", "0", "false"):
+    raise SystemExit("ERROR: GEOLIBRE_S3_BROWSER_STARTUP must be 1/true or 0/false.")
+
 # Origins allowed to drive a framed app over the embed postMessage API. Unset
 # means the API stays off, so a public deployment can never be driven by the
 # page that frames it. "*" allows any origin: private networks only.
@@ -591,6 +653,25 @@ EOF
 else
   printf '# Basic Auth disabled (GEOLIBRE_AUTH_USER/GEOLIBRE_AUTH_PASSWORD not set).\n' > "$AUTH_CONF"
   rm -f "$HTPASSWD"
+fi
+
+
+# Optional managed catalog API. It runs behind nginx and trusts only the
+# loopback proxy; the proxy identity is fixed for the smoke deployment and can
+# later be replaced with the ALB OIDC identity header.
+if [ "${GEOLIBRE_CATALOG_API_ENABLED:-0}" = "1" ]; then
+  CATALOG_USER="${GEOLIBRE_PROXY_USER:-smoke-test}"
+  CATALOG_EMAIL="${GEOLIBRE_PROXY_EMAIL:-smoke-test@example.invalid}"
+  case "$CATALOG_USER$CATALOG_EMAIL" in
+    *[!A-Za-z0-9@._+-]*)
+      echo "ERROR: GEOLIBRE_PROXY_USER and GEOLIBRE_PROXY_EMAIL contain unsupported characters." >&2
+      exit 1
+      ;;
+  esac
+  printf 'proxy_set_header Remote-User "%s";\nproxy_set_header Remote-Email "%s";\n' \
+    "$CATALOG_USER" "$CATALOG_EMAIL" > /etc/nginx/geolibre-catalog-auth.conf
+  echo "Catalog API starting on 127.0.0.1:8766."
+  GEOLIBRE_HOST=127.0.0.1 GEOLIBRE_PORT=8766 geolibre-server-api &
 fi
 
 if [ "${GEOLIBRE_DISABLE_SIDECAR:-0}" = "1" ]; then

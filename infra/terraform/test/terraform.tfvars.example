@@ -1,0 +1,6 @@
+aws_region       = "us-east-1"
+name             = "geolibre-mvp"
+route53_zone_name = "satelytics.com"
+hostname         = "geolibre-mvp.satelytics.com"
+allowed_cidr     = "199.83.110.242/32"
+# image = "534228481105.dkr.ecr.us-east-1.amazonaws.com/geolibre-mvp:latest"

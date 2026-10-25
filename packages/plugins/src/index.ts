@@ -839,6 +839,10 @@ export {
   type S3BrowserLabels,
 } from "./plugins/maplibre-s3-browser";
 export {
+  maplibreCatalogBrowserPlugin,
+  CATALOG_BROWSER_PLUGIN_ID,
+} from "./plugins/maplibre-catalog-browser";
+export {
   DEFAULT_SOURCE_COOP_LABELS,
   maplibreNaturalEarthPlugin,
   maplibreSourceCoopPlugin,

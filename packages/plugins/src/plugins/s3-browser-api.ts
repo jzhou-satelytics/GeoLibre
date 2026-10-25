@@ -193,7 +193,18 @@ export function createS3BrowserClient(
         { connectionId },
         signal,
       );
-      if (response.status !== 200) throw errorFrom(response.status, response.body);
+      if (response.status !== 200) {
+        // Least-privilege deployments omit s3:ListAllMyBuckets, so the service
+        // call can be refused even though object reads work. A connection that
+        // names exact buckets (no wildcards) still knows which ones to show,
+        // so fall back to those rather than dead-ending the panel.
+        const known = signer
+          .connections()
+          .find((connection) => connection.id === connectionId)
+          ?.buckets.filter((bucket) => !bucket.includes("*"));
+        if (known && known.length > 0) return [...known].sort((a, b) => a.localeCompare(b));
+        throw errorFrom(response.status, response.body);
+      }
       return parseS3BucketList(response.body).sort((a, b) => a.localeCompare(b));
     },
 
